@@ -4,6 +4,7 @@ namespace Ranken\ServiceRepositoryGenerator\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\ServiceProvider;
 
 class InstallPackage extends Command
 {
@@ -50,23 +51,84 @@ class InstallPackage extends Command
 
     protected function registerProviders()
     {
-        $appConfig = file_get_contents(config_path('app.php'));
-
         $providers = [
-            'App\Providers\ServicePatternProvider::class',
-            'App\Providers\RepositoryPatternProvider::class',
+            'App\\Providers\\ServicePatternProvider',
+            'App\\Providers\\RepositoryPatternProvider',
         ];
 
-        foreach ($providers as $provider) {
-            if (strpos($appConfig, $provider) === false) {
-                $appConfig = str_replace(
-                    "        App\Providers\RouteServiceProvider::class,",
-                    "        App\Providers\RouteServiceProvider::class,\n        $provider,",
-                    $appConfig
-                );
-            }
+        if ($this->registerProvidersInBootstrapFile($providers)) {
+            return;
         }
 
-        file_put_contents(config_path('app.php'), $appConfig);
+        $this->registerProvidersInConfig($providers);
+    }
+
+    protected function registerProvidersInBootstrapFile(array $providers): bool
+    {
+        if (! method_exists(ServiceProvider::class, 'addProviderToBootstrapFile')) {
+            return false;
+        }
+
+        $bootstrapProvidersPath = base_path('bootstrap/providers.php');
+
+        if (! File::exists($bootstrapProvidersPath)) {
+            return false;
+        }
+
+        foreach ($providers as $provider) {
+            ServiceProvider::addProviderToBootstrapFile($provider);
+        }
+
+        return true;
+    }
+
+    protected function registerProvidersInConfig(array $providers): void
+    {
+        $appConfigPath = config_path('app.php');
+
+        if (! File::exists($appConfigPath)) {
+            $this->warn('Unable to locate config/app.php for provider registration.');
+            return;
+        }
+
+        $appConfig = File::get($appConfigPath);
+
+        foreach ($providers as $provider) {
+            $classReference = $provider.'::class';
+
+            if (str_contains($appConfig, $classReference)) {
+                continue;
+            }
+
+            $updatedConfig = preg_replace(
+                "/(ServiceProvider::defaultProviders\\(\\)->merge\\(\\[\\s*)/m",
+                "$1        {$classReference},\n",
+                $appConfig,
+                1,
+                $replacements
+            );
+
+            if ($replacements === 1) {
+                $appConfig = $updatedConfig;
+                continue;
+            }
+
+            $updatedConfig = preg_replace(
+                "/('providers'\\s*=>\\s*\\[\\s*)/m",
+                "$1        {$classReference},\n",
+                $appConfig,
+                1,
+                $replacements
+            );
+
+            if ($replacements !== 1 || $updatedConfig === null) {
+                $this->warn("Unable to register {$classReference} automatically in config/app.php.");
+                continue;
+            }
+
+            $appConfig = $updatedConfig;
+        }
+
+        File::put($appConfigPath, $appConfig);
     }
 }
