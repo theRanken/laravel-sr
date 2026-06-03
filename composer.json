@@ -12,6 +12,17 @@
             "Ranken\\ServiceRepositoryGenerator\\": "src/"
         }
     },
+    "autoload-dev": {
+        "psr-4": {
+            "Ranken\\ServiceRepositoryGenerator\\Tests\\": "tests/"
+        }
+    },
+    "require-dev": {
+        "orchestra/testbench": "^8.0|^9.0|^10.0|^11.0"
+    },
+    "scripts": {
+        "test": "phpunit"
+    },
     "extra": {
         "laravel": {
             "providers": [
